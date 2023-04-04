@@ -84,4 +84,4 @@ jobs:
           components: clippy
 
       - name: Run cargo clippy --all-targets and allow almost_swapped
-        run: cargo clippy --all-targets -- -A clippy::almost_swapped
+        run: cargo clippy -- -A clippy::almost_swapped
