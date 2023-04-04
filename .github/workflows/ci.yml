@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  push:
+    branches: [main, dev, esp32-c3]
+  pull_request:
+    branches: [main, dev]
+  merge_group:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+        toolchain: [nightly]
+    runs-on: ${{ matrix.os }}
+    steps:
+
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Get Rust toolchain
+        uses: dtolnay/rust-toolchain@v1
+        with:
+          profile: minimal
+          toolchain: ${{ matrix.toolchain }}
+          override: true
+
+      - name: Use Rust Cache
+        if: ${{ runner.os == 'Linux' }}
+        uses: Swatinem/rust-cache@v2.0.1
+
+      - name: Run cargo check --all-targets w/ -D warnings
+        run: cargo check --all-targets
+
+      - name: Run cargo test w/ -D warnings
+        if: ${{ runner.os == 'Linux' }}
+        run: cargo test -- --test-threads=1
+
+      - name: Run cargo doc
+        if: ${{ runner.os == 'Linux' }}
+        run: cargo doc --no-deps --document-private-items --all-features
+
+      - name: Run build --release --all-features --all-targets
+        run: cargo build --release --all-features --all-targets
+
+      - name: Run build --release --no-default-features
+        run: cargo build --release --no-default-features
+
+  rustfmt:
+    runs-on: ubuntu-20.04
+    steps:
+
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Get nightly Rust toolchain with rustfmt
+        uses: dtolnay/rust-toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly
+          override: true
+          components: rustfmt
+
+      - name: Run cargo fmt --all -- --check
+        run: cargo fmt --all -- --check
+
+  clippy:
+    runs-on: ubuntu-20.04
+    steps:
+
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Get nightly Rust toolchain with clippy
+        uses: dtolnay/rust-toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly
+          override: true
+          components: clippy
+
+      - name: Run cargo clippy --all-targets and allow almost_swapped
+        run: cargo clippy --all-targets -- -A clippy::almost_swapped
