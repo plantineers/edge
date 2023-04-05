@@ -19,6 +19,8 @@ embassy-net-driver = { git = "https://github.com/embassy-rs/embassy", rev = "264
 embassy-net = { git = "https://github.com/embassy-rs/embassy", rev = "26474ce6eb759e5add1c137f3417845e0797df3a", features = ["nightly", "tcp", "udp", "dhcpv4", "medium-ethernet"] }
 log = "0.4.17"
 embassy-futures = "0.1.0"
+serde = { version = "1.0", default-features = false, features = ["derive"] }
+serde_json = { version = "1.0", default-features = false, features = ["alloc"] }
 [profile.dev.package.esp-wifi]
 opt-level = 3
 

@@ -1,7 +1,11 @@
 #![no_std]
 #![no_main]
 #![feature(type_alias_impl_trait)]
+extern crate alloc;
+#[global_allocator]
+static ALLOCATOR: esp_alloc::EspHeap = esp_alloc::EspHeap::empty();
 
+use alloc::string::String;
 use embassy_executor::_export::StaticCell;
 use embassy_futures::select::{select, Either};
 
@@ -19,13 +23,29 @@ use hal::systimer::SystemTimer;
 use hal::{embassy, Rng};
 use hal::{peripherals::Peripherals, prelude::*, timer::TimerGroup, Rtc};
 
+#[derive(serde::Deserialize, serde::Serialize, Debug)]
+struct SensorData {
+    device_id: u32,
+    temperature: f32,
+    humidity: f32,
+}
+impl SensorData {
+    fn new(device_id: u32, temperature: f32, humidity: f32) -> Self {
+        Self {
+            device_id,
+            temperature,
+            humidity,
+        }
+    }
+}
+
 #[embassy_executor::task]
 async fn run(mut esp_now: EspNow<'static>) {
     let mut ticker = Ticker::every(Duration::from_secs(5));
     loop {
         let res = select(ticker.next(), async {
             let r = esp_now.receive_async().await;
-            println!("Received {:x?}", r);
+            println!("Received {:?}", String::from_utf8_lossy(r.data.as_slice()));
             if r.info.dst_address == BROADCAST_ADDRESS {
                 if !esp_now.peer_exists(&r.info.src_address).unwrap() {
                     esp_now
@@ -37,7 +57,9 @@ async fn run(mut esp_now: EspNow<'static>) {
                         })
                         .unwrap();
                 }
-                esp_now.send(&r.info.src_address, b"Hello Peer").unwrap();
+                esp_now
+                    .send(&r.info.src_address, b"Hi Maxi, ich bin dein Vater")
+                    .unwrap();
             }
         })
         .await;
@@ -45,7 +67,9 @@ async fn run(mut esp_now: EspNow<'static>) {
         match res {
             Either::First(_) => {
                 println!("Send");
-                esp_now.send(&BROADCAST_ADDRESS, b"Maxi stinkt").unwrap();
+                esp_now
+                    .send(&BROADCAST_ADDRESS, b"Maxi stinkt immer noch")
+                    .unwrap();
             }
             Either::Second(_) => (),
         }
@@ -80,8 +104,7 @@ fn main() -> ! {
     .unwrap();
 
     let (wifi, _) = peripherals.RADIO.split();
-    let esp_now = esp_wifi::esp_now::EspNow::new(wifi).unwrap();
-    println!("esp-now version {}", esp_now.get_version().unwrap());
+    let esp_now = EspNow::new(wifi).unwrap();
 
     let timer_group0 = TimerGroup::new(peripherals.TIMG0, &clocks);
     embassy::init(&clocks, timer_group0.timer0);
