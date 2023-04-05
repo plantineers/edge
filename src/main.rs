@@ -1,11 +1,12 @@
 #![no_std]
 #![no_main]
 #![feature(type_alias_impl_trait)]
+#![feature(byte_slice_trim_ascii)]
 extern crate alloc;
-#[global_allocator]
-static ALLOCATOR: esp_alloc::EspHeap = esp_alloc::EspHeap::empty();
 
-use alloc::string::String;
+use alloc::string::{String, ToString};
+use alloc::vec;
+use alloc::vec::Vec;
 use embassy_executor::_export::StaticCell;
 use embassy_futures::select::{select, Either};
 
@@ -23,19 +24,36 @@ use hal::systimer::SystemTimer;
 use hal::{embassy, Rng};
 use hal::{peripherals::Peripherals, prelude::*, timer::TimerGroup, Rtc};
 
+// Executor and allocator
+#[global_allocator]
+static ALLOCATOR: esp_alloc::EspHeap = esp_alloc::EspHeap::empty();
+static EXECUTOR: StaticCell<Executor> = StaticCell::new();
+
 #[derive(serde::Deserialize, serde::Serialize, Debug)]
 struct SensorData {
     device_id: u32,
-    temperature: f32,
-    humidity: f32,
+    sensors: Vec<(String, f32)>,
 }
 impl SensorData {
-    fn new(device_id: u32, temperature: f32, humidity: f32) -> Self {
+    fn new(device_id: u32) -> Self {
         Self {
             device_id,
-            temperature,
-            humidity,
+            sensors: vec![
+                ("temperature".to_string(), 23.5),
+                ("humidity".to_string(), 42.0),
+            ],
         }
+    }
+}
+fn init_heap() {
+    const HEAP_SIZE: usize = 32 * 1024;
+
+    extern "C" {
+        static mut _heap_start: u32;
+    }
+    unsafe {
+        let heap_start = &_heap_start as *const _ as usize;
+        ALLOCATOR.init(heap_start as *mut u8, HEAP_SIZE);
     }
 }
 
@@ -45,7 +63,13 @@ async fn run(mut esp_now: EspNow<'static>) {
     loop {
         let res = select(ticker.next(), async {
             let r = esp_now.receive_async().await;
-            println!("Received {:?}", String::from_utf8_lossy(r.data.as_slice()));
+            // Cut off the null bytes
+            let my_data = r.get_data();
+            println!("Received {:?}", my_data);
+            println!(
+                "Received {:?}",
+                serde_json::from_slice::<SensorData>(my_data).unwrap()
+            );
             if r.info.dst_address == BROADCAST_ADDRESS {
                 if !esp_now.peer_exists(&r.info.src_address).unwrap() {
                     esp_now
@@ -58,7 +82,10 @@ async fn run(mut esp_now: EspNow<'static>) {
                         .unwrap();
                 }
                 esp_now
-                    .send(&r.info.src_address, b"Hi Maxi, ich bin dein Vater")
+                    .send(
+                        &r.info.src_address,
+                        serde_json::to_vec(&SensorData::new(2)).unwrap().as_slice(),
+                    )
                     .unwrap();
             }
         })
@@ -68,7 +95,10 @@ async fn run(mut esp_now: EspNow<'static>) {
             Either::First(_) => {
                 println!("Send");
                 esp_now
-                    .send(&BROADCAST_ADDRESS, b"Maxi stinkt immer noch")
+                    .send(
+                        &BROADCAST_ADDRESS,
+                        serde_json::to_vec(&SensorData::new(2)).unwrap().as_slice(),
+                    )
                     .unwrap();
             }
             Either::Second(_) => (),
@@ -76,12 +106,11 @@ async fn run(mut esp_now: EspNow<'static>) {
     }
 }
 
-static EXECUTOR: StaticCell<Executor> = StaticCell::new();
-
 #[entry]
 fn main() -> ! {
     init_logger(log::LevelFilter::Info);
     esp_wifi::init_heap();
+    init_heap();
 
     let peripherals = Peripherals::take();
 
