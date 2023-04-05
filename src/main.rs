@@ -4,6 +4,7 @@
 #![feature(byte_slice_trim_ascii)]
 extern crate alloc;
 
+use alloc::boxed::Box;
 use alloc::string::{String, ToString};
 use alloc::vec;
 use alloc::vec::Vec;
@@ -15,6 +16,9 @@ use embassy_time::{Duration, Ticker};
 use esp_backtrace as _;
 use esp_println::logger::init_logger;
 use esp_println::println;
+use esp_wifi::binary::include::{
+    esp_wifi_get_protocol, esp_wifi_set_protocol, wifi_interface_t_WIFI_IF_STA, WIFI_PROTOCOL_LR,
+};
 use esp_wifi::esp_now::{EspNow, PeerInfo, BROADCAST_ADDRESS};
 use esp_wifi::initialize;
 use futures_util::StreamExt;
@@ -59,6 +63,15 @@ fn init_heap() {
 
 #[embassy_executor::task]
 async fn run(mut esp_now: EspNow<'static>) {
+    unsafe {
+        let protocol: *mut u8 = &mut *Box::new(0);
+        esp_wifi_get_protocol(wifi_interface_t_WIFI_IF_STA, protocol);
+        if *protocol as u32 == WIFI_PROTOCOL_LR {
+            println!("Protocol: LR");
+        } else {
+            println!("Protocol: {:?}", *protocol);
+        }
+    }
     let mut ticker = Ticker::every(Duration::from_secs(5));
     loop {
         let res = select(ticker.next(), async {
@@ -133,6 +146,12 @@ fn main() -> ! {
     .unwrap();
 
     let (wifi, _) = peripherals.RADIO.split();
+    unsafe {
+        esp_wifi_set_protocol(
+            wifi_interface_t_WIFI_IF_STA,
+            WIFI_PROTOCOL_LR.try_into().unwrap(),
+        );
+    }
     let esp_now = EspNow::new(wifi).unwrap();
 
     let timer_group0 = TimerGroup::new(peripherals.TIMG0, &clocks);
