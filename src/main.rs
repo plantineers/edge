@@ -6,6 +6,7 @@ extern crate alloc;
 static ALLOCATOR: esp_alloc::EspHeap = esp_alloc::EspHeap::empty();
 
 use alloc::string::String;
+use alloc::vec;
 
 use esp_backtrace as _;
 use esp_println::logger::init_logger;
@@ -18,7 +19,17 @@ use hal::system::SystemExt;
 use hal::systimer::SystemTimer;
 use hal::Rng;
 use hal::{peripherals::Peripherals, prelude::*, Rtc};
+fn init_heap() {
+    const HEAP_SIZE: usize = 32 * 1024;
 
+    extern "C" {
+        static mut _heap_start: u32;
+    }
+    unsafe {
+        let heap_start = &_heap_start as *const _ as usize;
+        ALLOCATOR.init(heap_start as *mut u8, HEAP_SIZE);
+    }
+}
 #[derive(serde::Deserialize, serde::Serialize, Debug)]
 struct SensorData {
     device_id: u32,
@@ -34,11 +45,11 @@ impl SensorData {
         }
     }
 }
-
 #[entry]
 fn main() -> ! {
     init_logger(log::LevelFilter::Info);
     esp_wifi::init_heap();
+    init_heap();
 
     let peripherals = Peripherals::take();
 
