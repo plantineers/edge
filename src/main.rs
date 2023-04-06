@@ -111,6 +111,7 @@ fn main() -> ! {
     init_logger(log::LevelFilter::Info);
     esp_wifi::init_heap();
     init_heap();
+    println!("Hello from Rust");
 
     let peripherals = Peripherals::take();
 

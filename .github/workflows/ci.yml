@@ -33,6 +33,9 @@ jobs:
         if: ${{ runner.os == 'Linux' }}
         uses: Swatinem/rust-cache@v2.0.1
 
+      - name: Install nightly-src
+        run: rustup component add rust-src --toolchain nightly-x86_64-unknown-linux-gnu
+
       - name: Run cargo check --all-targets w/ -D warnings
         run: cargo check --all-targets
 
@@ -83,5 +86,5 @@ jobs:
           override: true
           components: clippy
 
-      - name: Run cargo clippy --all-targets and allow almost_swapped
+      - name: Run cargo clippy and allow almost_swapped
         run: cargo clippy -- -A clippy::almost_swapped
