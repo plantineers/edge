@@ -46,6 +46,10 @@ jobs:
       - name: Run build --release --all-features
         run: cargo build --release --all-features
 
+      - name: Run cargo test w/ -D warnings
+        if: ${{ runner.os == 'Linux' }}
+        run: cargo test -- --test-threads=1
+
       - name: Run build --release --no-default-features
         run: cargo build --release --no-default-features
 
