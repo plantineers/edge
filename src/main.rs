@@ -11,6 +11,9 @@ use alloc::vec;
 use esp_backtrace as _;
 use esp_println::logger::init_logger;
 use esp_println::println;
+use esp_wifi::binary::include::{
+    esp_wifi_set_protocol, wifi_interface_t_WIFI_IF_STA, WIFI_PROTOCOL_LR,
+};
 use esp_wifi::current_millis;
 use esp_wifi::esp_now::{PeerInfo, BROADCAST_ADDRESS};
 use esp_wifi::initialize;
@@ -50,6 +53,13 @@ fn main() -> ! {
     init_logger(log::LevelFilter::Info);
     esp_wifi::init_heap();
     init_heap();
+
+    unsafe {
+        esp_wifi_set_protocol(
+            wifi_interface_t_WIFI_IF_STA,
+            WIFI_PROTOCOL_LR.try_into().unwrap(),
+        );
+    }
 
     let peripherals = Peripherals::take();
 
