@@ -2,6 +2,11 @@
 #![no_main]
 #![feature(type_alias_impl_trait)]
 #![feature(byte_slice_trim_ascii)]
+#![feature(impl_trait_in_assoc_type)]
+
+#[cfg(feature = "dht11")]
+mod dht11;
+
 extern crate alloc;
 
 use alloc::boxed::Box;
@@ -21,7 +26,6 @@ use esp_wifi::binary::include::{
 };
 use esp_wifi::esp_now::{EspNow, PeerInfo, BROADCAST_ADDRESS};
 use esp_wifi::initialize;
-use futures_util::StreamExt;
 use hal::clock::{ClockControl, CpuClock};
 use hal::system::SystemExt;
 use hal::systimer::SystemTimer;
