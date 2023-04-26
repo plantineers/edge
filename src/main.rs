@@ -2,6 +2,10 @@
 #![no_main]
 #![feature(type_alias_impl_trait)]
 #![feature(byte_slice_trim_ascii)]
+
+#[cfg(feature = "dht11")]
+mod dht11;
+
 extern crate alloc;
 
 use alloc::boxed::Box;
@@ -25,7 +29,7 @@ use futures_util::StreamExt;
 use hal::clock::{ClockControl, CpuClock};
 use hal::system::SystemExt;
 use hal::systimer::SystemTimer;
-use hal::{embassy, Rng};
+use hal::{embassy, Delay, Rng, IO};
 use hal::{peripherals::Peripherals, prelude::*, timer::TimerGroup, Rtc};
 
 // Executor and allocator
@@ -135,6 +139,14 @@ fn main() -> ! {
         rtc.rwdt.disable();
         rtc
     };
+    #[cfg(feature = "dht11")]
+    {
+        let mut delay = Delay::new(&clocks);
+        let io = IO::new(peripherals.GPIO, peripherals.IO_MUX);
+        let pin = io.pins.gpio7.into_open_drain_output();
+        let data = dht11::poll_sensor(pin, &mut delay);
+        println!("DHT11: {:?}", data);
+    }
     let timer = SystemTimer::new(peripherals.SYSTIMER).alarm0;
     initialize(
         timer,
