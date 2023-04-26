@@ -122,7 +122,6 @@ async fn run(mut esp_now: EspNow<'static>) {
 #[entry]
 fn main() -> ! {
     init_logger(log::LevelFilter::Info);
-    esp_wifi::init_heap();
     init_heap();
 
     let peripherals = Peripherals::take();
