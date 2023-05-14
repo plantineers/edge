@@ -26,6 +26,7 @@ use esp_wifi::binary::include::{
 use esp_wifi::esp_now::{EspNow, PeerInfo, BROADCAST_ADDRESS};
 use esp_wifi::initialize;
 use futures_util::StreamExt;
+use hal::adc::{AdcConfig, Attenuation, ADC, ADC1};
 use hal::clock::{ClockControl, CpuClock};
 use hal::system::SystemExt;
 use hal::systimer::SystemTimer;
@@ -130,7 +131,7 @@ fn main() -> ! {
 
     let peripherals = Peripherals::take();
 
-    let system = peripherals.SYSTEM.split();
+    let mut system = peripherals.SYSTEM.split();
     let clocks = ClockControl::configure(system.clock_control, CpuClock::Clock160MHz).freeze();
     let mut rtc = {
         let mut rtc = Rtc::new(peripherals.RTC_CNTL);
@@ -139,13 +140,29 @@ fn main() -> ! {
         rtc.rwdt.disable();
         rtc
     };
+    let io = IO::new(peripherals.GPIO, peripherals.IO_MUX);
     #[cfg(feature = "dht11")]
     {
         let mut delay = Delay::new(&clocks);
-        let io = IO::new(peripherals.GPIO, peripherals.IO_MUX);
         let pin = io.pins.gpio7.into_open_drain_output();
         let data = dht11::poll_sensor(pin, &mut delay);
         println!("DHT11: {:?}", data);
+    }
+    #[cfg(feature = "hw390")]
+    {
+        // To use a hw390 capacitive moisture sensor, connect the sensor data cable to GPIO2(A0)
+        let analog = peripherals.APB_SARADC.split();
+        let mut adc1_config = AdcConfig::new();
+        let mut pin =
+            adc1_config.enable_pin(io.pins.gpio2.into_analog(), Attenuation::Attenuation11dB);
+        let mut adc1 = ADC::<ADC1>::adc(
+            &mut system.peripheral_clock_control,
+            analog.adc1,
+            adc1_config,
+        )
+        .unwrap();
+        let pin_value: u16 = nb::block!(adc1.read(&mut pin)).unwrap();
+        println!("PIN2 ADC reading = {}", pin_value);
     }
     let timer = SystemTimer::new(peripherals.SYSTIMER).alarm0;
     initialize(
