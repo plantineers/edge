@@ -2,9 +2,11 @@
 #![no_main]
 #![feature(type_alias_impl_trait)]
 #![feature(byte_slice_trim_ascii)]
-
+// Sensors
 #[cfg(feature = "dht11")]
 mod dht11;
+#[cfg(feature = "hw390")]
+mod hw390;
 
 extern crate alloc;
 
@@ -12,6 +14,7 @@ use alloc::boxed::Box;
 use alloc::string::{String, ToString};
 use alloc::vec;
 use alloc::vec::Vec;
+use core::arch::asm;
 use embassy_executor::_export::StaticCell;
 use embassy_futures::select::{select, Either};
 
@@ -41,15 +44,25 @@ static EXECUTOR: StaticCell<Executor> = StaticCell::new();
 #[derive(serde::Deserialize, serde::Serialize, Debug)]
 struct SensorData {
     device_id: u32,
-    sensors: Vec<(String, f32)>,
+    sensors: Vec<Data>,
+}
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct Data {
+    r#type: String,
+    value: f32,
+}
+impl Data {
+    fn new(r#type: String, value: f32) -> Self {
+        Self { r#type, value }
+    }
 }
 impl SensorData {
     fn new(device_id: u32) -> Self {
         Self {
             device_id,
             sensors: vec![
-                ("temperature".to_string(), 23.5),
-                ("humidity".to_string(), 42.0),
+                Data::new("temperature".to_string(), 23.5),
+                Data::new("humidity".to_string(), 42.0),
             ],
         }
     }
@@ -143,26 +156,11 @@ fn main() -> ! {
     let io = IO::new(peripherals.GPIO, peripherals.IO_MUX);
     #[cfg(feature = "dht11")]
     {
+        // Testing DHT11
         let mut delay = Delay::new(&clocks);
         let pin = io.pins.gpio7.into_open_drain_output();
         let data = dht11::poll_sensor(pin, &mut delay);
         println!("DHT11: {:?}", data);
-    }
-    #[cfg(feature = "hw390")]
-    {
-        // To use a hw390 capacitive moisture sensor, connect the sensor data cable to GPIO2(A0)
-        let analog = peripherals.APB_SARADC.split();
-        let mut adc1_config = AdcConfig::new();
-        let mut pin =
-            adc1_config.enable_pin(io.pins.gpio2.into_analog(), Attenuation::Attenuation11dB);
-        let mut adc1 = ADC::<ADC1>::adc(
-            &mut system.peripheral_clock_control,
-            analog.adc1,
-            adc1_config,
-        )
-        .unwrap();
-        let pin_value: u16 = nb::block!(adc1.read(&mut pin)).unwrap();
-        println!("PIN2 ADC reading = {}", pin_value);
     }
     let timer = SystemTimer::new(peripherals.SYSTIMER).alarm0;
     initialize(
