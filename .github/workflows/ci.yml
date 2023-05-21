@@ -28,6 +28,7 @@ jobs:
           profile: minimal
           toolchain: ${{ matrix.toolchain }}
           override: true
+          components: rust-src
 
       - name: Use Rust Cache
         if: ${{ runner.os == 'Linux' }}
@@ -67,11 +68,7 @@ jobs:
           profile: minimal
           toolchain: nightly
           override: true
-          components: rustfmt
-
-      - name: Install rust-src component
-        if: ${{ runner.os == 'Linux' }}
-        run: rustup component add rust-src --toolchain nightly-2023-03-09-x86_64-unknown-linux-gnu
+          components: rustfmt, rust-src
 
       - name: Run cargo fmt --all -- --check
         run: cargo fmt --all -- --check
@@ -89,11 +86,7 @@ jobs:
           profile: minimal
           toolchain: nightly
           override: true
-          components: clippy
-
-      - name: Install rust-src component
-        if: ${{ runner.os == 'Linux' }}
-        run: rustup component add rust-src --toolchain nightly-2023-03-09-x86_64-unknown-linux-gnu
+          components: clippy, rust-src
 
       - name: Run cargo clippy --all-targets and allow almost_swapped
         run: cargo clippy -- -A clippy::almost_swapped
