@@ -33,6 +33,10 @@ jobs:
         if: ${{ runner.os == 'Linux' }}
         uses: Swatinem/rust-cache@v2.0.1
 
+      - name: Install rust-src component
+        if: ${{ runner.os == 'Linux' }}
+        run: rustup component add rust-src --toolchain nightly-2023-03-09-x86_64-unknown-linux-gnu
+
       - name: Run cargo check --all-targets w/ -D warnings
         run: cargo check --all-targets
 
