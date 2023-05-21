@@ -25,10 +25,9 @@ jobs:
       - name: Get Rust toolchain
         uses: dtolnay/rust-toolchain@v1
         with:
-          profile: minimal
           toolchain: ${{ matrix.toolchain }}
-          override: true
           components: rust-src
+          target: riscv32imc-unknown-none-elf
 
       - name: Use Rust Cache
         if: ${{ runner.os == 'Linux' }}
@@ -65,10 +64,10 @@ jobs:
       - name: Get nightly Rust toolchain with rustfmt
         uses: dtolnay/rust-toolchain@v1
         with:
-          profile: minimal
           toolchain: nightly
-          override: true
           components: rustfmt, rust-src
+          target: riscv32imc-unknown-none-elf
+
 
       - name: Run cargo fmt --all -- --check
         run: cargo fmt --all -- --check
@@ -83,10 +82,9 @@ jobs:
       - name: Get nightly Rust toolchain with clippy
         uses: dtolnay/rust-toolchain@v1
         with:
-          profile: minimal
           toolchain: nightly
-          override: true
           components: clippy, rust-src
+          target: riscv32imc-unknown-none-elf
 
       - name: Run cargo clippy --all-targets and allow almost_swapped
         run: cargo clippy -- -A clippy::almost_swapped
