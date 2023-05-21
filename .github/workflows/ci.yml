@@ -69,6 +69,10 @@ jobs:
           override: true
           components: rustfmt
 
+      - name: Install rust-src component
+        if: ${{ runner.os == 'Linux' }}
+        run: rustup component add rust-src --toolchain nightly-2023-03-09-x86_64-unknown-linux-gnu
+
       - name: Run cargo fmt --all -- --check
         run: cargo fmt --all -- --check
 
@@ -86,6 +90,10 @@ jobs:
           toolchain: nightly
           override: true
           components: clippy
+
+      - name: Install rust-src component
+        if: ${{ runner.os == 'Linux' }}
+        run: rustup component add rust-src --toolchain nightly-2023-03-09-x86_64-unknown-linux-gnu
 
       - name: Run cargo clippy --all-targets and allow almost_swapped
         run: cargo clippy -- -A clippy::almost_swapped
