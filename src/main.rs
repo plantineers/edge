@@ -14,7 +14,6 @@ use alloc::boxed::Box;
 use alloc::string::{String, ToString};
 use alloc::vec;
 use alloc::vec::Vec;
-use core::arch::asm;
 use embassy_executor::_export::StaticCell;
 use embassy_futures::select::{select, Either};
 
@@ -35,6 +34,7 @@ use hal::system::SystemExt;
 use hal::systimer::SystemTimer;
 use hal::{embassy, Delay, Rng, IO};
 use hal::{peripherals::Peripherals, prelude::*, timer::TimerGroup, Rtc};
+use postcard::to_vec;
 
 // Executor and allocator
 #[global_allocator]
@@ -43,7 +43,7 @@ static EXECUTOR: StaticCell<Executor> = StaticCell::new();
 
 #[derive(serde::Deserialize, serde::Serialize, Debug)]
 struct SensorData {
-    device_id: u32,
+    controller: [char; 32],
     sensors: Vec<Data>,
 }
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
@@ -57,14 +57,14 @@ impl Data {
     }
 }
 impl SensorData {
-    fn new(device_id: u32) -> Self {
+    fn new(controller: [char; 32]) -> Self {
         Self {
-            device_id,
-            sensors: vec![
-                Data::new("temperature".to_string(), 23.5),
-                Data::new("humidity".to_string(), 42.0),
-            ],
+            controller,
+            sensors: vec![],
         }
+    }
+    fn add_data(&mut self, data: Data) {
+        self.sensors.push(data);
     }
 }
 fn init_heap() {
@@ -90,50 +90,19 @@ async fn run(mut esp_now: EspNow<'static>) {
             println!("Protocol: {:?}", *protocol);
         }
     }
-    let mut ticker = Ticker::every(Duration::from_secs(5));
+    let mut ticker = Ticker::every(Duration::from_secs(60 * 5));
     loop {
-        let res = select(ticker.next(), async {
-            let r = esp_now.receive_async().await;
-            // Cut off the null bytes
-            let my_data = r.get_data();
-            println!("Received {:?}", my_data);
-            println!(
-                "Received {:?}",
-                serde_json::from_slice::<SensorData>(my_data).unwrap()
-            );
-            if r.info.dst_address == BROADCAST_ADDRESS {
-                if !esp_now.peer_exists(&r.info.src_address).unwrap() {
-                    esp_now
-                        .add_peer(PeerInfo {
-                            peer_address: r.info.src_address,
-                            lmk: None,
-                            channel: None,
-                            encrypt: false,
-                        })
-                        .unwrap();
-                }
-                esp_now
-                    .send(
-                        &r.info.src_address,
-                        serde_json::to_vec(&SensorData::new(2)).unwrap().as_slice(),
-                    )
-                    .unwrap();
-            }
-        })
-        .await;
-
-        match res {
-            Either::First(_) => {
-                println!("Send");
-                esp_now
-                    .send(
-                        &BROADCAST_ADDRESS,
-                        serde_json::to_vec(&SensorData::new(2)).unwrap().as_slice(),
-                    )
-                    .unwrap();
-            }
-            Either::Second(_) => (),
-        }
+        let sensor_data = SensorData::new(['a'; 32]);
+        println!("Sending data...");
+        esp_now
+            .send(
+                &BROADCAST_ADDRESS,
+                to_vec::<SensorData, 200>(&SensorData::new(['a'; 32]))
+                    .unwrap()
+                    .as_slice(),
+            )
+            .unwrap();
+        ticker.next().await;
     }
 }
 
