@@ -2,9 +2,11 @@
 #![no_main]
 #![feature(type_alias_impl_trait)]
 #![feature(byte_slice_trim_ascii)]
-
+// Sensors
 #[cfg(feature = "dht11")]
 mod dht11;
+#[cfg(feature = "hw390")]
+mod hw390;
 
 extern crate alloc;
 
@@ -32,6 +34,7 @@ use hal::system::SystemExt;
 use hal::systimer::SystemTimer;
 use hal::{embassy, Delay, Rng, IO};
 use hal::{peripherals::Peripherals, prelude::*, timer::TimerGroup, Rtc};
+use postcard::to_vec;
 
 // Executor and allocator
 #[global_allocator]
@@ -40,18 +43,28 @@ static EXECUTOR: StaticCell<Executor> = StaticCell::new();
 
 #[derive(serde::Deserialize, serde::Serialize, Debug)]
 struct SensorData {
-    device_id: u32,
-    sensors: Vec<(String, f32)>,
+    controller: [char; 32],
+    sensors: Vec<Data>,
+}
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct Data {
+    r#type: String,
+    value: f32,
+}
+impl Data {
+    fn new(r#type: String, value: f32) -> Self {
+        Self { r#type, value }
+    }
 }
 impl SensorData {
-    fn new(device_id: u32) -> Self {
+    fn new(controller: [char; 32]) -> Self {
         Self {
-            device_id,
-            sensors: vec![
-                ("temperature".to_string(), 23.5),
-                ("humidity".to_string(), 42.0),
-            ],
+            controller,
+            sensors: vec![],
         }
+    }
+    fn add_data(&mut self, data: Data) {
+        self.sensors.push(data);
     }
 }
 fn init_heap() {
@@ -77,50 +90,19 @@ async fn run(mut esp_now: EspNow<'static>) {
             println!("Protocol: {:?}", *protocol);
         }
     }
-    let mut ticker = Ticker::every(Duration::from_secs(5));
+    let mut ticker = Ticker::every(Duration::from_secs(60 * 5));
     loop {
-        let res = select(ticker.next(), async {
-            let r = esp_now.receive_async().await;
-            // Cut off the null bytes
-            let my_data = r.get_data();
-            println!("Received {:?}", my_data);
-            println!(
-                "Received {:?}",
-                serde_json::from_slice::<SensorData>(my_data).unwrap()
-            );
-            if r.info.dst_address == BROADCAST_ADDRESS {
-                if !esp_now.peer_exists(&r.info.src_address).unwrap() {
-                    esp_now
-                        .add_peer(PeerInfo {
-                            peer_address: r.info.src_address,
-                            lmk: None,
-                            channel: None,
-                            encrypt: false,
-                        })
-                        .unwrap();
-                }
-                esp_now
-                    .send(
-                        &r.info.src_address,
-                        serde_json::to_vec(&SensorData::new(2)).unwrap().as_slice(),
-                    )
-                    .unwrap();
-            }
-        })
-        .await;
-
-        match res {
-            Either::First(_) => {
-                println!("Send");
-                esp_now
-                    .send(
-                        &BROADCAST_ADDRESS,
-                        serde_json::to_vec(&SensorData::new(2)).unwrap().as_slice(),
-                    )
-                    .unwrap();
-            }
-            Either::Second(_) => (),
-        }
+        let sensor_data = SensorData::new(['a'; 32]);
+        println!("Sending data...");
+        esp_now
+            .send(
+                &BROADCAST_ADDRESS,
+                to_vec::<SensorData, 200>(&SensorData::new(['a'; 32]))
+                    .unwrap()
+                    .as_slice(),
+            )
+            .unwrap();
+        ticker.next().await;
     }
 }
 
@@ -143,26 +125,11 @@ fn main() -> ! {
     let io = IO::new(peripherals.GPIO, peripherals.IO_MUX);
     #[cfg(feature = "dht11")]
     {
+        // Testing DHT11
         let mut delay = Delay::new(&clocks);
         let pin = io.pins.gpio7.into_open_drain_output();
         let data = dht11::poll_sensor(pin, &mut delay);
         println!("DHT11: {:?}", data);
-    }
-    #[cfg(feature = "hw390")]
-    {
-        // To use a hw390 capacitive moisture sensor, connect the sensor data cable to GPIO2(A0)
-        let analog = peripherals.APB_SARADC.split();
-        let mut adc1_config = AdcConfig::new();
-        let mut pin =
-            adc1_config.enable_pin(io.pins.gpio2.into_analog(), Attenuation::Attenuation11dB);
-        let mut adc1 = ADC::<ADC1>::adc(
-            &mut system.peripheral_clock_control,
-            analog.adc1,
-            adc1_config,
-        )
-        .unwrap();
-        let pin_value: u16 = nb::block!(adc1.read(&mut pin)).unwrap();
-        println!("PIN2 ADC reading = {}", pin_value);
     }
     let timer = SystemTimer::new(peripherals.SYSTIMER).alarm0;
     initialize(
