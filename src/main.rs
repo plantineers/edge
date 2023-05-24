@@ -110,6 +110,7 @@ async fn run(mut esp_now: EspNow<'static>) {
 fn main() -> ! {
     init_logger(log::LevelFilter::Info);
     init_heap();
+    println!("Hello from Rust");
 
     let peripherals = Peripherals::take();
 
