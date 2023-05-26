@@ -1,8 +1,6 @@
 #![no_std]
 #![no_main]
 #![feature(type_alias_impl_trait)]
-#![feature(byte_slice_trim_ascii)]
-#![feature(trivial_bounds)]
 // Sensors
 #[cfg(feature = "dht11")]
 mod dht11;
@@ -13,7 +11,7 @@ use crate::hw390::Hw390;
 
 extern crate alloc;
 use alloc::boxed::Box;
-use alloc::string::{String, ToString};
+use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
 use embassy_executor::_export::StaticCell;
@@ -27,7 +25,7 @@ use esp_println::println;
 use esp_wifi::binary::include::{
     esp_wifi_get_protocol, esp_wifi_set_protocol, wifi_interface_t_WIFI_IF_STA, WIFI_PROTOCOL_LR,
 };
-use esp_wifi::esp_now::{EspNow, PeerInfo, BROADCAST_ADDRESS};
+use esp_wifi::esp_now::{EspNow, BROADCAST_ADDRESS};
 use esp_wifi::initialize;
 use futures_util::StreamExt;
 use hal::adc::{AdcConfig, Attenuation, ADC, ADC1};
@@ -106,8 +104,8 @@ async fn run(
     let mut hw390 = {
         let analog = adc.split();
         let config = AdcConfig::new();
-        let mut pin = adc1.enable_pin(io.pins.gpio2.into_analog(), Attenuation::Attenuation6dB);
-        let mut adc = ADC::<ADC1>::adc(&mut peripheral_cc, analog.adc1, config).unwrap();
+        let pin = adc1.enable_pin(io.pins.gpio2.into_analog(), Attenuation::Attenuation11dB);
+        let adc = ADC::<ADC1>::adc(&mut peripheral_cc, analog.adc1, config).unwrap();
         Hw390 { adc, pin }
     };
     loop {
@@ -137,8 +135,9 @@ fn main() -> ! {
 
     let peripherals = Peripherals::take();
 
-    let mut system = peripherals.SYSTEM.split();
+    let system = peripherals.SYSTEM.split();
     let clocks = ClockControl::configure(system.clock_control, CpuClock::Clock160MHz).freeze();
+    #[allow(unused_variables, unused_mut)]
     let mut rtc = {
         let mut rtc = Rtc::new(peripherals.RTC_CNTL);
         rtc.swd.disable();

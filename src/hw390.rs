@@ -29,7 +29,7 @@ pub struct Hw390<'a> {
 
 impl<'a> Hw390<'a> {
     pub fn read(&mut self) -> Data {
-        let readout = self.adc.read(&mut self.pin).unwrap();
+        let readout = hal::prelude::nb::block!(self.adc.read(&mut self.pin)).unwrap();
         Data {
             r#type: "humidity".to_string(),
             value: normalise_sensor_data(readout),
