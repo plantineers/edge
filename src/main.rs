@@ -15,7 +15,6 @@ use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
 use embassy_executor::_export::StaticCell;
-use embassy_futures::select::{select, Either};
 
 use embassy_executor::Executor;
 use embassy_time::{Duration, Ticker};
@@ -31,9 +30,9 @@ use futures_util::StreamExt;
 use hal::adc::{AdcConfig, Attenuation, ADC, ADC1};
 use hal::clock::{ClockControl, CpuClock};
 use hal::peripherals::APB_SARADC;
-use hal::system::{PeripheralClockControl, SystemExt, SystemParts};
+use hal::system::{PeripheralClockControl, SystemExt};
 use hal::systimer::SystemTimer;
-use hal::{embassy, peripherals, Delay, Rng, IO};
+use hal::{embassy, Rng, IO};
 use hal::{peripherals::Peripherals, prelude::*, timer::TimerGroup, Rtc};
 use postcard::to_vec;
 
