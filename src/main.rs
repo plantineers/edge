@@ -2,14 +2,16 @@
 #![no_main]
 #![feature(type_alias_impl_trait)]
 #![feature(byte_slice_trim_ascii)]
+#![feature(trivial_bounds)]
 // Sensors
 #[cfg(feature = "dht11")]
 mod dht11;
 #[cfg(feature = "hw390")]
 mod hw390;
+#[cfg(feature = "hw390")]
+use crate::hw390::Hw390;
 
 extern crate alloc;
-
 use alloc::boxed::Box;
 use alloc::string::{String, ToString};
 use alloc::vec;
@@ -30,9 +32,10 @@ use esp_wifi::initialize;
 use futures_util::StreamExt;
 use hal::adc::{AdcConfig, Attenuation, ADC, ADC1};
 use hal::clock::{ClockControl, CpuClock};
-use hal::system::SystemExt;
+use hal::peripherals::APB_SARADC;
+use hal::system::{PeripheralClockControl, SystemExt, SystemParts};
 use hal::systimer::SystemTimer;
-use hal::{embassy, Delay, Rng, IO};
+use hal::{embassy, peripherals, Delay, Rng, IO};
 use hal::{peripherals::Peripherals, prelude::*, timer::TimerGroup, Rtc};
 use postcard::to_vec;
 
@@ -46,16 +49,6 @@ struct SensorData {
     controller: [char; 32],
     sensors: Vec<Data>,
 }
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
-pub struct Data {
-    r#type: String,
-    value: f32,
-}
-impl Data {
-    fn new(r#type: String, value: f32) -> Self {
-        Self { r#type, value }
-    }
-}
 impl SensorData {
     fn new(controller: [char; 32]) -> Self {
         Self {
@@ -67,6 +60,17 @@ impl SensorData {
         self.sensors.push(data);
     }
 }
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct Data {
+    r#type: String,
+    value: f32,
+}
+impl Data {
+    fn new(r#type: String, value: f32) -> Self {
+        Self { r#type, value }
+    }
+}
+
 fn init_heap() {
     const HEAP_SIZE: usize = 32 * 1024;
 
@@ -80,7 +84,13 @@ fn init_heap() {
 }
 
 #[embassy_executor::task]
-async fn run(mut esp_now: EspNow<'static>) {
+async fn run(
+    mut esp_now: EspNow<'static>,
+    io: IO,
+    mut adc1: AdcConfig<ADC1>,
+    mut peripheral_cc: PeripheralClockControl,
+    adc: APB_SARADC,
+) {
     unsafe {
         let protocol: *mut u8 = &mut *Box::new(0);
         esp_wifi_get_protocol(wifi_interface_t_WIFI_IF_STA, protocol);
@@ -90,10 +100,24 @@ async fn run(mut esp_now: EspNow<'static>) {
             println!("Protocol: {:?}", *protocol);
         }
     }
-    let mut ticker = Ticker::every(Duration::from_secs(60 * 5));
+    let mut ticker = Ticker::every(Duration::from_secs(60 * 1));
+    #[cfg(feature = "hw390")]
+    // Create hw390 instance with gpio2
+    let mut hw390 = {
+        let analog = adc.split();
+        let config = AdcConfig::new();
+        let mut pin = adc1.enable_pin(io.pins.gpio2.into_analog(), Attenuation::Attenuation6dB);
+        let mut adc = ADC::<ADC1>::adc(&mut peripheral_cc, analog.adc1, config).unwrap();
+        Hw390 { adc, pin }
+    };
     loop {
-        let sensor_data = SensorData::new(['a'; 32]);
-        println!("Sending data...");
+        // TODO: Generate the UUID on start, storing it in the flash
+        let mut sensor_data = SensorData::new(['a'; 32]);
+        #[cfg(feature = "hw390")]
+        {
+            sensor_data.add_data(hw390.read());
+        }
+        println!("Sending data... {:?}", sensor_data);
         esp_now
             .send(
                 &BROADCAST_ADDRESS,
@@ -123,14 +147,6 @@ fn main() -> ! {
         rtc
     };
     let io = IO::new(peripherals.GPIO, peripherals.IO_MUX);
-    #[cfg(feature = "dht11")]
-    {
-        // Testing DHT11
-        let mut delay = Delay::new(&clocks);
-        let pin = io.pins.gpio7.into_open_drain_output();
-        let data = dht11::poll_sensor(pin, &mut delay);
-        println!("DHT11: {:?}", data);
-    }
     let timer = SystemTimer::new(peripherals.SYSTIMER).alarm0;
     initialize(
         timer,
@@ -152,7 +168,12 @@ fn main() -> ! {
     let timer_group0 = TimerGroup::new(peripherals.TIMG0, &clocks);
     embassy::init(&clocks, timer_group0.timer0);
     let executor = EXECUTOR.init(Executor::new());
+    let adc = peripherals.APB_SARADC;
+    let adc_config = AdcConfig::new();
+    let peripheral_cc = system.peripheral_clock_control;
     executor.run(|spawner| {
-        spawner.spawn(run(esp_now)).ok();
+        spawner
+            .spawn(run(esp_now, io, adc_config, peripheral_cc, adc))
+            .ok();
     });
 }
