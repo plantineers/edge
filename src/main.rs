@@ -88,15 +88,6 @@ async fn run(
     mut peripheral_cc: PeripheralClockControl,
     adc: APB_SARADC,
 ) {
-    unsafe {
-        let protocol: *mut u8 = &mut *Box::new(0);
-        esp_wifi_get_protocol(wifi_interface_t_WIFI_IF_STA, protocol);
-        if *protocol as u32 == WIFI_PROTOCOL_LR {
-            println!("Protocol: LR");
-        } else {
-            println!("Protocol: {:?}", *protocol);
-        }
-    }
     let mut ticker = Ticker::every(Duration::from_secs(60 * 1));
     #[cfg(feature = "hw390")]
     // Create hw390 instance with gpio2
@@ -163,12 +154,12 @@ fn main() -> ! {
     }
     let esp_now = EspNow::new(wifi).unwrap();
 
-    let timer_group0 = TimerGroup::new(peripherals.TIMG0, &clocks);
+    let mut peripheral_cc = system.peripheral_clock_control;
+    let timer_group0 = TimerGroup::new(peripherals.TIMG0, &clocks, &mut peripheral_cc);
     embassy::init(&clocks, timer_group0.timer0);
     let executor = EXECUTOR.init(Executor::new());
     let adc = peripherals.APB_SARADC;
     let adc_config = AdcConfig::new();
-    let peripheral_cc = system.peripheral_clock_control;
     executor.run(|spawner| {
         spawner
             .spawn(run(esp_now, io, adc_config, peripheral_cc, adc))
