@@ -70,7 +70,7 @@ impl Data {
 /// This initializes the heap to be used by the allocator.
 /// DANGER: If something doesn't work for no apparent reason, try decreasing the heap size if you're not using it all.
 fn init_heap() {
-    const HEAP_SIZE: usize = 24 * 1024;
+    const HEAP_SIZE: usize = 4 * 1024;
 
     extern "C" {
         static mut _heap_start: u32;
