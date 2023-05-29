@@ -10,7 +10,6 @@ mod hw390;
 use crate::hw390::Hw390;
 
 extern crate alloc;
-use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
@@ -22,12 +21,12 @@ use esp_backtrace as _;
 use esp_println::logger::init_logger;
 use esp_println::println;
 use esp_wifi::binary::include::{
-    esp_wifi_get_protocol, esp_wifi_set_protocol, wifi_interface_t_WIFI_IF_STA, WIFI_PROTOCOL_LR,
+    esp_wifi_set_protocol, wifi_interface_t_WIFI_IF_STA, WIFI_PROTOCOL_LR,
 };
 use esp_wifi::esp_now::{EspNow, BROADCAST_ADDRESS};
 use esp_wifi::initialize;
-use futures_util::StreamExt;
-use hal::adc::{AdcConfig, Attenuation, ADC, ADC1};
+use hal::adc::{AdcConfig, ADC1};
+use hal::adc::{Attenuation, ADC};
 use hal::clock::{ClockControl, CpuClock};
 use hal::peripherals::APB_SARADC;
 use hal::system::{PeripheralClockControl, SystemExt};
@@ -82,22 +81,23 @@ fn init_heap() {
 }
 
 #[embassy_executor::task]
-async fn run(
+async fn main_loop(
     mut esp_now: EspNow<'static>,
     io: IO,
-    mut adc1: AdcConfig<ADC1>,
-    mut peripheral_cc: PeripheralClockControl,
-    adc: APB_SARADC,
+    #[allow(unused)] mut adc1: AdcConfig<ADC1>,
+    #[allow(unused)] mut peripheral_cc: PeripheralClockControl,
+    #[allow(unused)] mut adc: APB_SARADC,
 ) {
     let mut ticker = Ticker::every(Duration::from_secs(60 * 1));
     #[cfg(feature = "hw390")]
     // Create hw390 instance with gpio2
     let mut hw390 = {
         let analog = adc.split();
-        let config = AdcConfig::new();
-        let pin = adc1.enable_pin(io.pins.gpio2.into_analog(), Attenuation::Attenuation11dB);
-        let adc = ADC::<ADC1>::adc(&mut peripheral_cc, analog.adc1, config).unwrap();
-        Hw390 { adc, pin }
+        let mut adc1_config = AdcConfig::new();
+        let mut pin =
+            adc1_config.enable_pin(io.pins.gpio2.into_analog(), Attenuation::Attenuation11dB);
+        let mut adc1 = ADC::<ADC1>::adc(&mut peripheral_cc, analog.adc1, adc1_config).unwrap();
+        Hw390 { adc: adc1, pin }
     };
     loop {
         // TODO: Generate the UUID on start, storing it in the flash
@@ -163,7 +163,7 @@ fn main() -> ! {
     let adc_config = AdcConfig::new();
     executor.run(|spawner| {
         spawner
-            .spawn(run(esp_now, io, adc_config, peripheral_cc, adc))
+            .spawn(main_loop(esp_now, io, adc_config, peripheral_cc, adc))
             .ok();
     });
 }

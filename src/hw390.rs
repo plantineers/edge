@@ -1,6 +1,7 @@
 use crate::Data;
 use alloc::string::ToString;
 use embedded_hal::adc::OneShot;
+use esp_println::println;
 use hal::adc::{AdcPin, ADC, ADC1};
 use hal::gpio::{
     Analog, Bank0GpioRegisterAccess, Gpio2Signals, GpioPin, InputOutputAnalogPinType,
@@ -23,7 +24,10 @@ pub struct Hw390<'a> {
 
 impl<'a> Hw390<'a> {
     pub fn read(&mut self) -> Data {
-        let readout = hal::prelude::nb::block!(self.adc.read(&mut self.pin)).unwrap();
+        let readout = hal::prelude::nb::block!(self.adc.read(&mut self.pin)).unwrap_or_else(|_| {
+            panic!("Failed to read from ADC");
+            0
+        });
         Data {
             r#type: "humidity".to_string(),
             value: normalise_sensor_data(readout),
