@@ -24,20 +24,22 @@ pub struct Hw390<'a> {
 
 impl<'a> Hw390<'a> {
     pub fn read(&mut self) -> Data {
-        let readout = hal::prelude::nb::block!(self.adc.read(&mut self.pin)).unwrap_or_else(|_| {
-            panic!("Failed to read from ADC");
-            0
-        });
+        let readout = hal::prelude::nb::block!(self.adc.read(&mut self.pin)).unwrap();
         Data {
             r#type: "humidity".to_string(),
-            value: normalise_sensor_data(readout),
+            value: normalise_humidity_data(readout),
         }
     }
 }
 
-/// The hw390 moisture sensor returns a value between 2459 and 4095
-/// From our measurements the sensor was in water at 2459 and in air at 4095
-/// We want to normalise the values to be between 0 and 1
-fn normalise_sensor_data(readout: u16) -> f32 {
-    (readout - 2459) as f32 / (4095 - 2459) as f32
+/// The hw390 moisture sensor returns a value between 3000 and 4095
+/// From our measurements the sensor was in water at 3000 and in air at 4095
+/// We want to normalise the values to be between 0 and 1, so that 1 is in water and 0 is in air
+fn normalise_humidity_data(readout: u16) -> f32 {
+    println!("readout: {}", readout);
+    let min_value = 3000;
+    let max_value = 4095;
+    let normalized_value = (readout.saturating_sub(min_value)) as f32 / (max_value - min_value) as f32;
+    // And now invert the value
+    1.0 - normalized_value
 }

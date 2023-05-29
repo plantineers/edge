@@ -88,7 +88,7 @@ async fn main_loop(
     #[allow(unused)] mut peripheral_cc: PeripheralClockControl,
     #[allow(unused)] mut adc: APB_SARADC,
 ) {
-    let mut ticker = Ticker::every(Duration::from_secs(60 * 1));
+    let mut ticker = Ticker::every(Duration::from_secs(10 * 1));
     #[cfg(feature = "hw390")]
     // Create hw390 instance with gpio2
     let mut hw390 = {
@@ -106,7 +106,7 @@ async fn main_loop(
         {
             sensor_data.add_data(hw390.read());
         }
-        println!("Sending data... {:?}", sensor_data);
+        println!("Sending data: {:?}", sensor_data);
         esp_now
             .send(
                 &BROADCAST_ADDRESS,
