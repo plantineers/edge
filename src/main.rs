@@ -110,7 +110,7 @@ async fn main_loop(
         esp_now
             .send(
                 &BROADCAST_ADDRESS,
-                to_vec::<SensorData, 200>(&SensorData::new(['a'; 32]))
+                to_vec::<SensorData, 200>(&sensor_data)
                     .unwrap()
                     .as_slice(),
             )
