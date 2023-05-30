@@ -36,7 +36,6 @@ use hal::{embassy, Delay, Rng, IO};
 use hal::{peripherals::Peripherals, prelude::*, timer::TimerGroup, Rtc};
 use postcard::to_vec;
 
-// use uuid::Uuid;
 // Executor and allocator
 #[global_allocator]
 static ALLOCATOR: esp_alloc::EspHeap = esp_alloc::EspHeap::empty();
@@ -113,8 +112,6 @@ fn main() -> ! {
     init_heap();
     println!("Hello from Rust");
     //this is uui need to figure out where to put it and store it
-    // let uuid = Uuid::new_v4();
-    // println!("{}", uuid);
     let peripherals = Peripherals::take();
 
     let mut system = peripherals.SYSTEM.split();
