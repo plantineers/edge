@@ -23,8 +23,7 @@ serde = { version = "1.0", default-features = false, features = ["derive", "allo
 embedded-hal = { version = "0.2", features = ["unproven"] }
 dht11 = { version = "0.3.1", optional=true}
 postcard = "1.0.4"
-uuid = {version = "1.3.0", features = ["v4", "fast-rng"]}
-
+uuid = {version = "1.3.0", features = ["v4"]}
 [features]
 default = []
 dht11 = ["dep:dht11"]
