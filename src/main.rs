@@ -6,11 +6,12 @@
 mod dht11;
 #[cfg(feature = "hw390")]
 mod hw390;
+
 #[cfg(feature = "hw390")]
 use crate::hw390::Hw390;
 
 extern crate alloc;
-use alloc::string::String;
+use alloc::string::{String, ToString};
 use alloc::vec;
 use alloc::vec::Vec;
 use embassy_executor::_export::StaticCell;
@@ -26,12 +27,14 @@ use esp_wifi::binary::include::{
 use esp_wifi::esp_now::{EspNow, BROADCAST_ADDRESS};
 use esp_wifi::initialize;
 use hal::adc::{AdcConfig, ADC1};
+#[allow(unused_imports)]
 use hal::adc::{Attenuation, ADC};
-use hal::clock::{ClockControl, CpuClock};
-use hal::peripherals::APB_SARADC;
+use hal::clock::{ClockControl, Clocks, CpuClock};
+use hal::i2c::I2C;
+use hal::peripherals::{APB_SARADC, I2C0};
 use hal::system::{PeripheralClockControl, SystemExt};
 use hal::systimer::SystemTimer;
-use hal::{embassy, Rng, IO};
+use hal::{embassy, Delay, Rng, IO};
 use hal::{peripherals::Peripherals, prelude::*, timer::TimerGroup, Rtc};
 use postcard::to_vec;
 
@@ -87,6 +90,9 @@ async fn main_loop(
     #[allow(unused)] mut adc1: AdcConfig<ADC1>,
     #[allow(unused)] mut peripheral_cc: PeripheralClockControl,
     #[allow(unused)] mut adc: APB_SARADC,
+    #[allow(unused)] mut i2c0: I2C0,
+    #[allow(unused)] clocks: Clocks<'static>,
+    #[allow(unused)] mut delay: Delay,
 ) {
     let mut ticker = Ticker::every(Duration::from_secs(10 * 1));
     #[cfg(feature = "hw390")]
@@ -99,6 +105,26 @@ async fn main_loop(
         let mut adc1 = ADC::<ADC1>::adc(&mut peripheral_cc, analog.adc1, adc1_config).unwrap();
         Hw390 { adc: adc1, pin }
     };
+    #[cfg(feature = "tsl2591")]
+    // TODO: Move to seperate module
+    let mut tsl = {
+        let mut i2c = {
+            I2C::new(
+                i2c0,
+                // I2C on the xiao ESP32c3 is on D5 and D6, meaning gpio6, gpio7
+                io.pins.gpio6,
+                io.pins.gpio7,
+                400u32.kHz(),
+                &mut peripheral_cc,
+                &clocks,
+            )
+        };
+        let mut t = tsl2591::Driver::new(i2c).unwrap();
+        t.enable().unwrap();
+        t.set_timing(None).unwrap();
+        t.set_gain(None).unwrap();
+        t
+    };
     loop {
         // TODO: Generate the UUID on start, storing it in the flash
         let mut sensor_data = SensorData::new(['a'; 32]);
@@ -106,13 +132,20 @@ async fn main_loop(
         {
             sensor_data.add_data(hw390.read());
         }
+        #[cfg(feature = "tsl2591")]
+        {
+            sensor_data.add_data(Data::new("light".to_string(), {
+                // I really don't know why the library doesn't abstract this away. Maybe we should make a PR?
+                // TODO: Think about normalizing the lux values, though it's probably not needed
+                let (ch_0, ch_1) = tsl.get_channel_data(&mut delay).unwrap();
+                tsl.calculate_lux(ch_0, ch_1).unwrap()
+            }));
+        }
         println!("Sending data: {:?}", sensor_data);
         esp_now
             .send(
                 &BROADCAST_ADDRESS,
-                to_vec::<SensorData, 200>(&SensorData::new(['a'; 32]))
-                    .unwrap()
-                    .as_slice(),
+                to_vec::<SensorData, 200>(&sensor_data).unwrap().as_slice(),
             )
             .unwrap();
         ticker.next().await;
@@ -162,9 +195,20 @@ fn main() -> ! {
     let executor = EXECUTOR.init(Executor::new());
     let adc = peripherals.APB_SARADC;
     let adc_config = AdcConfig::new();
+    let i2c0 = peripherals.I2C0;
+    let delay = Delay::new(&clocks);
     executor.run(|spawner| {
         spawner
-            .spawn(main_loop(esp_now, io, adc_config, peripheral_cc, adc))
+            .spawn(main_loop(
+                esp_now,
+                io,
+                adc_config,
+                peripheral_cc,
+                adc,
+                i2c0,
+                clocks,
+                delay,
+            ))
             .ok();
     });
 }
