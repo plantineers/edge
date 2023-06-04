@@ -201,8 +201,7 @@ fn main() -> ! {
     let mut flash = FlashStorage::new();
     let flash_addr = 0x9000;
     let uuid: [char; 32] = get_uuid(&mut flash, flash_addr).unwrap_or_else(|| {
-        const ALPHANUMERIC: &[u8] =
-            b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+        const ALPHANUMERIC: &[u8] = b"abcdefghijklmnopqrstuvwxyz0123456789";
 
         let mut random_indices = [0u8; 32];
         rng.read(&mut random_indices).unwrap();
