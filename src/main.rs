@@ -2,19 +2,20 @@
 #![no_main]
 #![feature(type_alias_impl_trait)]
 // Sensors
-#[cfg(feature = "dht11")]
-mod dht11;
 #[cfg(feature = "hw390")]
 mod hw390;
-mod utils;
-
 #[cfg(feature = "hw390")]
 use crate::hw390::Hw390;
+#[cfg(feature = "dht11")]
+use dht11::Dht11;
+
+mod utils;
 
 extern crate alloc;
 use alloc::string::{String, ToString};
 use alloc::vec;
 use alloc::vec::Vec;
+
 use embassy_executor::_export::StaticCell;
 
 use crate::utils::{convert_to_chars, convert_to_u8s};
@@ -76,7 +77,7 @@ impl Data {
 /// This initializes the heap to be used by the allocator.
 /// DANGER: If something doesn't work for no apparent reason, try decreasing the heap size if you're not using it all.
 fn init_heap() {
-    const HEAP_SIZE: usize = 4 * 1024;
+    const HEAP_SIZE: usize = 2 * 1024;
 
     extern "C" {
         static mut _heap_start: u32;
@@ -134,7 +135,7 @@ async fn main_loop(
         let mut i2c = {
             I2C::new(
                 i2c0,
-                // I2C on the XIAO ESP32c3 is on D5 and D6, meaning gpio6, gpio7
+                // I2C on the XIAO ESP32C3 is on D5 and D6, meaning gpio6, gpio7
                 io.pins.gpio6,
                 io.pins.gpio7,
                 400u32.kHz(),
@@ -147,6 +148,12 @@ async fn main_loop(
         t.set_timing(None).unwrap();
         t.set_gain(None).unwrap();
         t
+    };
+    #[cfg(feature = "dht11")]
+    let mut dht11 = {
+        // The DHT11 is on gpio20, which is D7 on the XIAO ESP32C3
+        let mut pin = io.pins.gpio20.into_open_drain_output();
+        Dht11::new(pin)
     };
     loop {
         // TODO: Generate the UUID on start, storing it in the flash
@@ -163,6 +170,15 @@ async fn main_loop(
                 let (ch_0, ch_1) = tsl.get_channel_data(&mut delay).unwrap();
                 tsl.calculate_lux(ch_0, ch_1).unwrap()
             }));
+        }
+        #[cfg(feature = "dht11")]
+        {
+            // Caution: The DHT11 requires precise timing, so running in debug mode with the DHT11 connected will probably not work
+            let measurement = dht11.perform_measurement(&mut delay);
+            if let Ok(mes) = measurement {
+                sensor_data.add_data(Data::new("temperature".to_string(), mes.temperature as f32));
+                sensor_data.add_data(Data::new("humidity".to_string(), mes.humidity as f32));
+            }
         }
         println!("Sending data: {:?}", sensor_data);
         esp_now
