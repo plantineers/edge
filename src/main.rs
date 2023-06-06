@@ -2,25 +2,30 @@
 #![no_main]
 #![feature(type_alias_impl_trait)]
 // Sensors
-#[cfg(feature = "dht11")]
-mod dht11;
 #[cfg(feature = "hw390")]
 mod hw390;
-
 #[cfg(feature = "hw390")]
 use crate::hw390::Hw390;
+#[cfg(feature = "dht11")]
+use dht11::Dht11;
+
+mod utils;
 
 extern crate alloc;
 use alloc::string::{String, ToString};
 use alloc::vec;
 use alloc::vec::Vec;
+
 use embassy_executor::_export::StaticCell;
 
+use crate::utils::{convert_to_chars, convert_to_u8s};
 use embassy_executor::Executor;
 use embassy_time::{Duration, Ticker};
+use embedded_storage::{ReadStorage, Storage};
 use esp_backtrace as _;
 use esp_println::logger::init_logger;
 use esp_println::println;
+use esp_storage::FlashStorage;
 use esp_wifi::binary::include::{
     esp_wifi_set_protocol, wifi_interface_t_WIFI_IF_STA, WIFI_PROTOCOL_LR,
 };
@@ -72,7 +77,7 @@ impl Data {
 /// This initializes the heap to be used by the allocator.
 /// DANGER: If something doesn't work for no apparent reason, try decreasing the heap size if you're not using it all.
 fn init_heap() {
-    const HEAP_SIZE: usize = 4 * 1024;
+    const HEAP_SIZE: usize = 2 * 1024;
 
     extern "C" {
         static mut _heap_start: u32;
@@ -83,6 +88,24 @@ fn init_heap() {
     }
 }
 
+/// Either gets the UUID from flash storage or returns None
+/// # Safety
+/// offset+32 must be smaller than the flash size
+fn get_uuid(flash: &mut FlashStorage, offset: u32) -> Option<[char; 32]> {
+    let mut uuid = [0; 32];
+    // We can safely unwrap here because we know the uuid is 32 bytes long and we do not read out of bounds
+    // because we know the flash size
+    flash.read(offset, &mut uuid).unwrap();
+    // For some reason, the flash is initialized with 0xFF, so we check for that
+    if uuid[0] == 255 && uuid[1] == 255 {
+        None
+    } else {
+        println!("Read UUID from flash: {:?}", uuid);
+        Some(convert_to_chars(uuid.iter().map(|c| *c as char)))
+    }
+}
+
+/// Our permanently running task of waiting, polling sensor data and sending it to the gateway
 #[embassy_executor::task]
 async fn main_loop(
     mut esp_now: EspNow<'static>,
@@ -93,6 +116,7 @@ async fn main_loop(
     #[allow(unused)] mut i2c0: I2C0,
     #[allow(unused)] clocks: Clocks<'static>,
     #[allow(unused)] mut delay: Delay,
+    uuid: [char; 32],
 ) {
     let mut ticker = Ticker::every(Duration::from_secs(10 * 1));
     #[cfg(feature = "hw390")]
@@ -111,7 +135,7 @@ async fn main_loop(
         let mut i2c = {
             I2C::new(
                 i2c0,
-                // I2C on the xiao ESP32c3 is on D5 and D6, meaning gpio6, gpio7
+                // I2C on the XIAO ESP32C3 is on D5 and D6, meaning gpio6, gpio7
                 io.pins.gpio6,
                 io.pins.gpio7,
                 400u32.kHz(),
@@ -125,9 +149,15 @@ async fn main_loop(
         t.set_gain(None).unwrap();
         t
     };
+    #[cfg(feature = "dht11")]
+    let mut dht11 = {
+        // The DHT11 is on gpio20, which is D7 on the XIAO ESP32C3
+        let mut pin = io.pins.gpio20.into_open_drain_output();
+        Dht11::new(pin)
+    };
     loop {
         // TODO: Generate the UUID on start, storing it in the flash
-        let mut sensor_data = SensorData::new(['a'; 32]);
+        let mut sensor_data = SensorData::new(uuid);
         #[cfg(feature = "hw390")]
         {
             sensor_data.add_data(hw390.read());
@@ -140,6 +170,15 @@ async fn main_loop(
                 let (ch_0, ch_1) = tsl.get_channel_data(&mut delay).unwrap();
                 tsl.calculate_lux(ch_0, ch_1).unwrap()
             }));
+        }
+        #[cfg(feature = "dht11")]
+        {
+            // Caution: The DHT11 requires precise timing, so running in debug mode with the DHT11 connected will probably not work
+            let measurement = dht11.perform_measurement(&mut delay);
+            if let Ok(mes) = measurement {
+                sensor_data.add_data(Data::new("temperature".to_string(), mes.temperature as f32));
+                sensor_data.add_data(Data::new("humidity".to_string(), mes.humidity as f32));
+            }
         }
         println!("Sending data: {:?}", sensor_data);
         esp_now
@@ -171,14 +210,31 @@ fn main() -> ! {
         rtc
     };
     let io = IO::new(peripherals.GPIO, peripherals.IO_MUX);
+    // Generate our random UUID if not yet generated. We have to do this before intializing wifi because we
+    // pass ownership of our RNG to the wifi driver
+    let mut rng = Rng::new(peripherals.RNG);
+    // Check if we have a UUID stored in flash, otherwise generate one
+    let mut flash = FlashStorage::new();
+    let flash_addr = 0x9000;
+    let uuid: [char; 32] = get_uuid(&mut flash, flash_addr).unwrap_or_else(|| {
+        const ALPHANUMERIC: &[u8] = b"abcdefghijklmnopqrstuvwxyz0123456789";
+
+        let mut random_indices = [0u8; 32];
+        rng.read(&mut random_indices).unwrap();
+        // Due to the way the RNG works, we can't just use the random bytes as a UUID. We have to map them to
+        let uuid = convert_to_chars(
+            random_indices
+                .iter()
+                .map(|index| ALPHANUMERIC[(index % ALPHANUMERIC.len() as u8) as usize] as char),
+        );
+        println!("Generated UUID: {:?}", uuid);
+        // Write the UUID to flash
+        let uuid_slice: [u8; 32] = convert_to_u8s(uuid);
+        flash.write(flash_addr, &uuid_slice).unwrap();
+        uuid
+    });
     let timer = SystemTimer::new(peripherals.SYSTIMER).alarm0;
-    initialize(
-        timer,
-        Rng::new(peripherals.RNG),
-        system.radio_clock_control,
-        &clocks,
-    )
-    .unwrap();
+    initialize(timer, rng, system.radio_clock_control, &clocks).unwrap();
 
     let (wifi, _) = peripherals.RADIO.split();
     unsafe {
@@ -208,6 +264,7 @@ fn main() -> ! {
                 i2c0,
                 clocks,
                 delay,
+                uuid,
             ))
             .ok();
     });

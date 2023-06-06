@@ -26,7 +26,7 @@ impl<'a> Hw390<'a> {
     pub fn read(&mut self) -> Data {
         let readout = hal::prelude::nb::block!(self.adc.read(&mut self.pin)).unwrap();
         Data {
-            r#type: "humidity".to_string(),
+            r#type: "soil-moisture".to_string(),
             value: normalise_humidity_data(readout),
         }
     }
@@ -39,7 +39,8 @@ fn normalise_humidity_data(readout: u16) -> f32 {
     println!("readout: {}", readout);
     let min_value = 3000;
     let max_value = 4095;
-    let normalized_value = (readout.saturating_sub(min_value)) as f32 / (max_value - min_value) as f32;
+    let normalized_value =
+        (readout.saturating_sub(min_value)) as f32 / (max_value - min_value) as f32;
     // And now invert the value
     1.0 - normalized_value
 }
