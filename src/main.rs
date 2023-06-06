@@ -6,7 +6,7 @@
 mod hw390;
 #[cfg(feature = "hw390")]
 use crate::hw390::Hw390;
-#[cfg(feature = "dht11")]
+#[cfg(any(feature = "dht11", feature = "dht22"))]
 use dht_sensor::*;
 
 mod utils;
@@ -20,7 +20,7 @@ use embassy_executor::_export::StaticCell;
 
 use crate::utils::{convert_to_chars, convert_to_u8s};
 use embassy_executor::Executor;
-use embassy_time::{Duration, Ticker};
+use embassy_time::{Duration, Ticker, Timer};
 use embedded_storage::{ReadStorage, Storage};
 use esp_backtrace as _;
 use esp_println::logger::init_logger;
@@ -37,6 +37,7 @@ use hal::adc::{Attenuation, ADC};
 use hal::clock::{ClockControl, Clocks, CpuClock};
 use hal::i2c::I2C;
 use hal::peripherals::{APB_SARADC, I2C0};
+use hal::prelude::eh1::_embedded_hal_delay_blocking_DelayUs;
 use hal::system::{PeripheralClockControl, SystemExt};
 use hal::systimer::SystemTimer;
 use hal::{embassy, Delay, Rng, IO};
@@ -118,6 +119,7 @@ async fn main_loop(
     #[allow(unused)] mut delay: Delay,
     uuid: [char; 32],
 ) {
+    // When the DHT11/DHT22 is connected our timer cannot be shorter than 1 Minute.
     let mut ticker = Ticker::every(Duration::from_secs(10 * 1));
     #[cfg(feature = "hw390")]
     // Create hw390 instance with gpio2
@@ -143,7 +145,7 @@ async fn main_loop(
                 &clocks,
             )
         };
-        let mut t = tsl2591::Driver::new(i2c).unwrap();
+        let mut t = tsl2591::Driver::new(i2c).expect("Failed to initialize TSL2591");
         t.enable().unwrap();
         t.set_timing(None).unwrap();
         t.set_gain(None).unwrap();
@@ -155,7 +157,10 @@ async fn main_loop(
 
     #[cfg(any(feature = "dht11", feature = "dht22"))]
     // Apparently necessary to not confuse the DHT Chips
-    dht_pin.set_high().unwrap();
+    {
+        dht_pin.set_high().unwrap();
+        Timer::after(Duration::from_secs(70)).await;
+    }
     loop {
         // TODO: Generate the UUID on start, storing it in the flash
         let mut sensor_data = SensorData::new(uuid);

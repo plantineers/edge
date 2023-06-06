@@ -36,7 +36,7 @@ impl<'a> Hw390<'a> {
 /// From our measurements the sensor was in water at 3000 and in air at 4095
 /// We want to normalise the values to be between 0 and 1, so that 1 is in water and 0 is in air
 fn normalise_humidity_data(readout: u16) -> f32 {
-    println!("readout: {}", readout);
+    println!("HW390 readout: {}", readout);
     let min_value = 3000;
     let max_value = 4095;
     let normalized_value =
