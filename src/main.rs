@@ -120,7 +120,7 @@ async fn main_loop(
     uuid: [char; 32],
 ) {
     // When the DHT11/DHT22 is connected our timer cannot be shorter than 1 Minute.
-    let mut ticker = Ticker::every(Duration::from_secs(10 * 1));
+    let mut ticker = Ticker::every(Duration::from_secs(20 * 1));
     #[cfg(feature = "hw390")]
     // Create hw390 instance with gpio2
     let mut hw390 = {
@@ -159,7 +159,7 @@ async fn main_loop(
     // Apparently necessary to not confuse the DHT Chips
     {
         dht_pin.set_high().unwrap();
-        Timer::after(Duration::from_secs(70)).await;
+        Timer::after(Duration::from_secs(60)).await;
     }
     loop {
         // TODO: Generate the UUID on start, storing it in the flash
