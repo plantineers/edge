@@ -6,6 +6,8 @@
 mod hw390;
 #[cfg(feature = "hw390")]
 use crate::hw390::Hw390;
+#[cfg(all(feature = "dht11", feature = "dht22"))]
+compile_error!("You can only use either the DHT11 or DHT22");
 #[cfg(any(feature = "dht11", feature = "dht22"))]
 use dht_sensor::*;
 
@@ -37,7 +39,6 @@ use hal::adc::{Attenuation, ADC};
 use hal::clock::{ClockControl, Clocks, CpuClock};
 use hal::i2c::I2C;
 use hal::peripherals::{APB_SARADC, I2C0};
-use hal::prelude::eh1::_embedded_hal_delay_blocking_DelayUs;
 use hal::system::{PeripheralClockControl, SystemExt};
 use hal::systimer::SystemTimer;
 use hal::{embassy, Delay, Rng, IO};
@@ -128,13 +129,13 @@ async fn main_loop(
         let mut adc1_config = AdcConfig::new();
         let mut pin =
             adc1_config.enable_pin(io.pins.gpio2.into_analog(), Attenuation::Attenuation11dB);
-        let mut adc1 = ADC::<ADC1>::adc(&mut peripheral_cc, analog.adc1, adc1_config).unwrap();
+        let adc1 = ADC::<ADC1>::adc(&mut peripheral_cc, analog.adc1, adc1_config).unwrap();
         Hw390 { adc: adc1, pin }
     };
     #[cfg(feature = "tsl2591")]
     // TODO: Move to seperate module
     let mut tsl = {
-        let mut i2c = {
+        let i2c = {
             I2C::new(
                 i2c0,
                 // I2C on the XIAO ESP32C3 is on D5 and D6, meaning gpio6, gpio7
@@ -163,6 +164,7 @@ async fn main_loop(
     }
     loop {
         // TODO: Generate the UUID on start, storing it in the flash
+        #[allow(unused_mut)]
         let mut sensor_data = SensorData::new(uuid);
         #[cfg(feature = "hw390")]
         {
