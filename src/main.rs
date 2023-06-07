@@ -6,8 +6,10 @@
 mod hw390;
 #[cfg(feature = "hw390")]
 use crate::hw390::Hw390;
-#[cfg(feature = "dht11")]
-use dht11::Dht11;
+#[cfg(all(feature = "dht11", feature = "dht22"))]
+compile_error!("You can only use either the DHT11 or DHT22");
+#[cfg(any(feature = "dht11", feature = "dht22"))]
+use dht_sensor::*;
 
 mod utils;
 
@@ -20,7 +22,7 @@ use embassy_executor::_export::StaticCell;
 
 use crate::utils::{convert_to_chars, convert_to_u8s};
 use embassy_executor::Executor;
-use embassy_time::{Duration, Ticker};
+use embassy_time::{Duration, Ticker, Timer};
 use embedded_storage::{ReadStorage, Storage};
 use esp_backtrace as _;
 use esp_println::logger::init_logger;
@@ -118,7 +120,8 @@ async fn main_loop(
     #[allow(unused)] mut delay: Delay,
     uuid: [char; 32],
 ) {
-    let mut ticker = Ticker::every(Duration::from_secs(10 * 1));
+    // When the DHT11/DHT22 is connected our timer cannot be shorter than 1 Minute.
+    let mut ticker = Ticker::every(Duration::from_secs(20 * 1));
     #[cfg(feature = "hw390")]
     // Create hw390 instance with gpio2
     let mut hw390 = {
@@ -126,13 +129,13 @@ async fn main_loop(
         let mut adc1_config = AdcConfig::new();
         let mut pin =
             adc1_config.enable_pin(io.pins.gpio2.into_analog(), Attenuation::Attenuation11dB);
-        let mut adc1 = ADC::<ADC1>::adc(&mut peripheral_cc, analog.adc1, adc1_config).unwrap();
+        let adc1 = ADC::<ADC1>::adc(&mut peripheral_cc, analog.adc1, adc1_config).unwrap();
         Hw390 { adc: adc1, pin }
     };
     #[cfg(feature = "tsl2591")]
     // TODO: Move to seperate module
     let mut tsl = {
-        let mut i2c = {
+        let i2c = {
             I2C::new(
                 i2c0,
                 // I2C on the XIAO ESP32C3 is on D5 and D6, meaning gpio6, gpio7
@@ -143,20 +146,25 @@ async fn main_loop(
                 &clocks,
             )
         };
-        let mut t = tsl2591::Driver::new(i2c).unwrap();
+        let mut t = tsl2591::Driver::new(i2c).expect("Failed to initialize TSL2591");
         t.enable().unwrap();
         t.set_timing(None).unwrap();
         t.set_gain(None).unwrap();
         t
     };
-    #[cfg(feature = "dht11")]
-    let mut dht11 = {
-        // The DHT11 is on gpio20, which is D7 on the XIAO ESP32C3
-        let mut pin = io.pins.gpio20.into_open_drain_output();
-        Dht11::new(pin)
-    };
+    #[cfg(any(feature = "dht11", feature = "dht22"))]
+    // The DHT11 is on gpio20, which is D7 on the XIAO ESP32C3
+    let mut dht_pin = io.pins.gpio20.into_open_drain_output();
+
+    #[cfg(any(feature = "dht11", feature = "dht22"))]
+    // Apparently necessary to not confuse the DHT Chips
+    {
+        dht_pin.set_high().unwrap();
+        Timer::after(Duration::from_secs(60)).await;
+    }
     loop {
         // TODO: Generate the UUID on start, storing it in the flash
+        #[allow(unused_mut)]
         let mut sensor_data = SensorData::new(uuid);
         #[cfg(feature = "hw390")]
         {
@@ -171,14 +179,22 @@ async fn main_loop(
                 tsl.calculate_lux(ch_0, ch_1).unwrap()
             }));
         }
-        #[cfg(feature = "dht11")]
+        #[cfg(any(feature = "dht11", feature = "dht22"))]
         {
             // Caution: The DHT11 requires precise timing, so running in debug mode with the DHT11 connected will probably not work
-            let measurement = dht11.perform_measurement(&mut delay);
+            #[cfg(feature = "dht11")]
+            let measurement = dht11::Reading::read(&mut delay, &mut dht_pin);
+            #[cfg(feature = "dht22")]
+            let measurement = dht22::Reading::read(&mut delay, &mut dht_pin);
             if let Ok(mes) = measurement {
                 sensor_data.add_data(Data::new("temperature".to_string(), mes.temperature as f32));
-                sensor_data.add_data(Data::new("humidity".to_string(), mes.humidity as f32));
-            }
+                sensor_data.add_data(Data::new(
+                    "humidity".to_string(),
+                    mes.relative_humidity as f32,
+                ));
+            } else {
+                println!("DHT read error: {:?}", measurement)
+            };
         }
         println!("Sending data: {:?}", sensor_data);
         esp_now

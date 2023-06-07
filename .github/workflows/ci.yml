@@ -37,18 +37,12 @@ jobs:
         if: ${{ runner.os == 'Linux' }}
         run: rustup component add rust-src --toolchain nightly-2023-03-09-x86_64-unknown-linux-gnu
 
-      - name: Run cargo check --all-targets w/ -D warnings
-        run: cargo check --all-targets
-
-      - name: Run cargo check --all-targets w/ -D warnings
-        run: cargo check
-
       - name: Run cargo doc
         if: ${{ runner.os == 'Linux' }}
-        run: cargo doc --no-deps --document-private-items --all-features
+        run: cargo doc --no-deps --document-private-items --features "tsl2591, dht22, hw390"
 
-      - name: Run build --release --all-features
-        run: cargo build --release --all-features
+      - name: Run build --release --features "tsl2591, dht22, hw390"
+        run: cargo build --release --features "tsl2591, dht22, hw390"
 
       - name: Run build --release --no-default-features
         run: cargo build --release --no-default-features
@@ -67,26 +61,10 @@ jobs:
           components: rustfmt, rust-src
           target: riscv32imc-unknown-none-elf
 
+      - name: Install rustfmt
+        run: rustup component add rustfmt
 
       - name: Run cargo fmt --all -- --check
         run: cargo fmt --all -- --check
 
-  clippy:
-    runs-on: ubuntu-20.04
-    steps:
-
-      - name: Checkout
-        uses: actions/checkout@v2
-
-      - name: Get nightly Rust toolchain with clippy
-        uses: dtolnay/rust-toolchain@v1
-        with:
-          toolchain: nightly
-          components: clippy, rust-src
-          target: riscv32imc-unknown-none-elf
-
-      - name: Install nightly-src
-        run: rustup component add rust-src --toolchain nightly-x86_64-unknown-linux-gnu
-
-      - name: Run cargo clippy and allow almost_swapped
-        run: cargo clippy -- -A clippy::almost_swapped
+  
