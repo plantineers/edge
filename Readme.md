@@ -1,8 +1,7 @@
 # Plantbuddy-edge
 
-[![Build Status](https://img.shields.io/github/workflow/status/plantineers/edge/build?style=flat-square)]
-[![License](https://img.shields.io/github/license/plantineers/edge?style=flat-square)](License)
-
+![Build](https://img.shields.io/github/actions/workflow/status/plantineers/edge/ci.yml?style=flat-square)
+![License](https://img.shields.io/github/license/plantineers/edge?style=flat-square)
 ## Introduction
 
 Plantbuddy is a solution for monitoring your plants. This is the repository containing the aggregator Firmware for the ESP32C3. Is is responsible for collecting data from the sensors and sending it to the [esp-gateway](https://github.com/plantineers/esp-gateway) via ESP-Now to ensure long range communication. It is written in bare-metal Rust running via [esp-hal](https://github.com/esp-rs/esp-hal) and [embassy](https://github.com/embassy-rs/embassy).
