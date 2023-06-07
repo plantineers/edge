@@ -1,6 +1,6 @@
 # Plantbuddy-edge
 
-[![Build Status](https://img.shields.io/github/actions/workflow/status/plantineers/edge/ci.yml?style=flat-square)](Build Status)
+[![Build Status](https://img.shields.io/github/workflow/status/plantineers/edge/build?style=flat-square)]
 [![License](https://img.shields.io/github/license/plantineers/edge?style=flat-square)](License)
 
 ## Introduction
