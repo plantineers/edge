@@ -39,10 +39,10 @@ jobs:
 
       - name: Run cargo doc
         if: ${{ runner.os == 'Linux' }}
-        run: cargo doc --no-deps --document-private-items --all-features
+        run: cargo doc --no-deps --document-private-items --features "tsl2591, dht22, hw390"
 
-      - name: Run build --release --all-features
-        run: cargo build --release --all-features
+      - name: Run build --release --features "tsl2591, dht22, hw390"
+        run: cargo build --release --features "tsl2591, dht22, hw390"
 
       - name: Run build --release --no-default-features
         run: cargo build --release --no-default-features
