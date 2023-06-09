@@ -22,6 +22,7 @@ embassy-futures = "0.1.0"
 serde = { version = "1.0", default-features = false, features = ["derive", "alloc"] }
 embedded-hal = { version = "0.2", features = ["unproven"] }
 dht-sensor ={ version = "0.2.1", optional=true}
+onewire = "0.3.13"
 
 postcard = "1.0.4"
 tsl2591 = { version = "0.2.0", optional = true}

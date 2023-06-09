@@ -42,6 +42,7 @@ use hal::system::{PeripheralClockControl, SystemExt};
 use hal::systimer::SystemTimer;
 use hal::{embassy, Delay, Rng, IO};
 use hal::{peripherals::Peripherals, prelude::*, timer::TimerGroup, Rtc};
+use onewire::{DeviceSearch, ds18b20, DS18B20, OneWire};
 use postcard::to_vec;
 
 // Executor and allocator
@@ -266,7 +267,48 @@ fn main() -> ! {
     let adc = peripherals.APB_SARADC;
     let adc_config = AdcConfig::new();
     let i2c0 = peripherals.I2C0;
-    let delay = Delay::new(&clocks);
+    let mut delay = Delay::new(&clocks);
+    let mut one = io
+        .pins.gpio10
+        .into_open_drain_output();
+
+    let mut wire = OneWire::new(&mut one, false);
+    if wire.reset(&mut delay).is_err() {
+        // missing pullup or error on line
+        loop {
+            println!("Error on 1-wire line")
+        }
+    }
+    println!("1-wire line ok");
+    // search for devices
+    let mut search = DeviceSearch::new();
+    // Is doof weil dann das device weg ist...
+    println!("Devices: {:x?}", wire.search_next(&mut search, &mut delay).unwrap());
+    while let Some(device) = wire.search_next(&mut search, &mut delay).unwrap() {
+        println!("Found device: {:x?}", device.address);
+        match device.address[0] {
+            ds18b20::FAMILY_CODE => {
+                let mut ds18b20 = DS18B20::new::<String>(device).unwrap();
+
+                // request sensor to measure temperature
+                let resolution = ds18b20.measure_temperature(&mut wire, &mut delay).unwrap();
+
+                // wait for completion, depends on resolution
+                _embedded_hal_delay_blocking_DelayUs::delay_ms(&mut delay, resolution.time_ms() as u32);
+
+                // read temperature
+                let temperature = ds18b20.read_temperature(&mut wire, &mut delay).unwrap();
+                println!("Temperature: {}°C", temperature);
+            },
+            _ => {
+                println!("Unknown device type");
+                // unknown device type
+            }
+        }
+    }
+
+    loop {
+    }
     executor.run(|spawner| {
         spawner
             .spawn(main_loop(
@@ -282,4 +324,5 @@ fn main() -> ! {
             ))
             .ok();
     });
+
 }
