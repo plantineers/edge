@@ -7,6 +7,7 @@ use hal::gpio::{
     Analog, Bank0GpioRegisterAccess, Gpio2Signals, GpioPin, InputOutputAnalogPinType,
     SingleCoreInteruptStatusRegisterAccessBank0,
 };
+/// A struct containing the hardware(via pointers to the right addresses of course) for the hw390 moisture sensor
 pub struct Hw390<'a> {
     pub adc: ADC<'a, ADC1>,
     pub pin: AdcPin<
@@ -23,6 +24,7 @@ pub struct Hw390<'a> {
 }
 
 impl<'a> Hw390<'a> {
+    /// Read out moisture data from the hw390 sensor and normalise it
     pub fn read(&mut self) -> Data {
         let readout = hal::prelude::nb::block!(self.adc.read(&mut self.pin)).unwrap();
         Data {
