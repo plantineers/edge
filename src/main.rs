@@ -26,10 +26,13 @@ use embassy_time::{Duration, Ticker, Timer};
 use embedded_storage::{ReadStorage, Storage};
 use esp_backtrace as _;
 use esp_println::logger::init_logger;
-use esp_println::println;
+use esp_println::{print, println};
 use esp_storage::FlashStorage;
 use esp_wifi::binary::include::{
-    esp_wifi_set_protocol, wifi_interface_t_WIFI_IF_STA, WIFI_PROTOCOL_LR,
+    esp_err_to_name, esp_wifi_config_80211_tx_rate, esp_wifi_set_bandwidth, esp_wifi_set_protocol,
+    esp_wifi_set_ps, esp_wifi_start, esp_wifi_stop, wifi_bandwidth_t_WIFI_BW_HT20,
+    wifi_interface_t_WIFI_IF_STA, wifi_phy_rate_t_WIFI_PHY_RATE_1M_L,
+    wifi_ps_type_t_WIFI_PS_MAX_MODEM, WIFI_PROTOCOL_LR,
 };
 use esp_wifi::esp_now::{EspNow, BROADCAST_ADDRESS};
 use esp_wifi::initialize;
@@ -161,7 +164,7 @@ async fn main_loop(
     // Apparently necessary to not confuse the DHT Chips
     {
         dht_pin.set_high().unwrap();
-        Timer::after(Duration::from_secs(60)).await;
+        Timer::after(Duration::from_secs(2)).await;
     }
     loop {
         // TODO: Generate the UUID on start, storing it in the flash
@@ -182,20 +185,24 @@ async fn main_loop(
         }
         #[cfg(any(feature = "dht11", feature = "dht22"))]
         {
-            // Caution: The DHT11 requires precise timing, so running in debug mode with the DHT11 connected will probably not work
-            #[cfg(feature = "dht11")]
-            let measurement = dht11::Reading::read(&mut delay, &mut dht_pin);
-            #[cfg(feature = "dht22")]
-            let measurement = dht22::Reading::read(&mut delay, &mut dht_pin);
-            if let Ok(mes) = measurement {
-                sensor_data.add_data(Data::new("temperature".to_string(), mes.temperature as f32));
-                sensor_data.add_data(Data::new(
-                    "humidity".to_string(),
-                    mes.relative_humidity as f32,
-                ));
-            } else {
-                println!("DHT read error: {:?}", measurement)
-            };
+            // TODO: Cleanup with extra function
+            loop {
+                // Caution: The DHT11 requires precise timing, so running in debug mode with the DHT11 connected will probably not work. Also with wifi the timings of our sensor are janky. So we just loop until it works
+                #[cfg(feature = "dht11")]
+                let measurement = dht11::Reading::read(&mut delay, &mut dht_pin);
+                #[cfg(feature = "dht22")]
+                let measurement = dht22::Reading::read(&mut delay, &mut dht_pin);
+                if let Ok(mes) = measurement {
+                    println!("DHT11: {:?}", mes);
+                    sensor_data
+                        .add_data(Data::new("temperature".to_string(), mes.temperature as f32));
+                    sensor_data.add_data(Data::new(
+                        "humidity".to_string(),
+                        mes.relative_humidity as f32,
+                    ));
+                    break;
+                }
+            }
         }
         println!("Sending data: {:?}", sensor_data);
         esp_now
@@ -254,14 +261,14 @@ fn main() -> ! {
     initialize(timer, rng, system.radio_clock_control, &clocks).unwrap();
 
     let (wifi, _) = peripherals.RADIO.split();
+
+    let esp_now = EspNow::new(wifi).unwrap();
     unsafe {
         esp_wifi_set_protocol(
             wifi_interface_t_WIFI_IF_STA,
             WIFI_PROTOCOL_LR.try_into().unwrap(),
         );
     }
-    let esp_now = EspNow::new(wifi).unwrap();
-
     let mut peripheral_cc = system.peripheral_clock_control;
     let timer_group0 = TimerGroup::new(peripherals.TIMG0, &clocks, &mut peripheral_cc);
     embassy::init(&clocks, timer_group0.timer0);
