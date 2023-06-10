@@ -132,8 +132,7 @@ async fn main_loop(
     let mut hw390 = {
         let analog = adc.split();
         let mut adc1_config = AdcConfig::new();
-        let mut pin =
-            adc1_config.enable_pin(io.pins.gpio2.into_analog(), Attenuation::Attenuation11dB);
+        let pin = adc1_config.enable_pin(io.pins.gpio2.into_analog(), Attenuation::Attenuation11dB);
         let adc1 = ADC::<ADC1>::adc(&mut peripheral_cc, analog.adc1, adc1_config).unwrap();
         Hw390 { adc: adc1, pin }
     };
@@ -198,7 +197,7 @@ async fn main_loop(
                         .add_data(Data::new("temperature".to_string(), mes.temperature as f32));
                     sensor_data.add_data(Data::new(
                         "humidity".to_string(),
-                        mes.relative_humidity as f32,
+                        mes.relative_humidity as f32 / 100f32,
                     ));
                     break;
                 }
