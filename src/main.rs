@@ -7,6 +7,7 @@ mod hw390;
 #[cfg(feature = "hw390")]
 use crate::hw390::Hw390;
 #[cfg(all(feature = "dht11", feature = "dht22"))]
+// Notify the user that they can only use one of the DHT sensors when compiling
 compile_error!("You can only use either the DHT11 or DHT22");
 #[cfg(any(feature = "dht11", feature = "dht22"))]
 use dht_sensor::*;
@@ -26,14 +27,10 @@ use embassy_time::{Duration, Ticker, Timer};
 use embedded_storage::{ReadStorage, Storage};
 use esp_backtrace as _;
 use esp_println::logger::init_logger;
-use esp_println::{print, println};
+use esp_println::println;
 use esp_storage::FlashStorage;
-use esp_wifi::binary::include::{
-    esp_err_to_name, esp_wifi_config_80211_tx_rate, esp_wifi_set_bandwidth, esp_wifi_set_protocol,
-    esp_wifi_set_ps, esp_wifi_start, esp_wifi_stop, wifi_bandwidth_t_WIFI_BW_HT20,
-    wifi_interface_t_WIFI_IF_STA, wifi_phy_rate_t_WIFI_PHY_RATE_1M_L,
-    wifi_ps_type_t_WIFI_PS_MAX_MODEM, WIFI_PROTOCOL_LR,
-};
+use esp_wifi::binary::include::wifi_interface_t_WIFI_IF_STA;
+use esp_wifi::binary::include::{esp_wifi_set_protocol, WIFI_PROTOCOL_LR};
 use esp_wifi::esp_now::{EspNow, BROADCAST_ADDRESS};
 use esp_wifi::initialize;
 use hal::adc::{AdcConfig, ADC1};
@@ -48,27 +45,32 @@ use hal::{embassy, Delay, Rng, IO};
 use hal::{peripherals::Peripherals, prelude::*, timer::TimerGroup, Rtc};
 use postcard::to_vec;
 
-// Executor and allocator
+/// The memory allocator for the heap. Allows us to use Strings and a Vec specifically.
 #[global_allocator]
 static ALLOCATOR: esp_alloc::EspHeap = esp_alloc::EspHeap::empty();
+/// The async Executor. Allows us to run async functions.
 static EXECUTOR: StaticCell<Executor> = StaticCell::new();
 
+/// Used for collecting data from the sensors and sending it via esp-now
 #[derive(serde::Deserialize, serde::Serialize, Debug)]
 struct SensorData {
     controller: [char; 32],
     sensors: Vec<Data>,
 }
 impl SensorData {
+    /// Creates a new SensorData struct given a UUID
     fn new(controller: [char; 32]) -> Self {
         Self {
             controller,
             sensors: vec![],
         }
     }
+    /// Adds a new sensor data top the struct.
     fn add_data(&mut self, data: Data) {
         self.sensors.push(data);
     }
 }
+/// Single sensor data, stored as a float for simplification
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct Data {
     r#type: String,
@@ -110,7 +112,7 @@ fn get_uuid(flash: &mut FlashStorage, offset: u32) -> Option<[char; 32]> {
     }
 }
 
-/// Our permanently running task of waiting, polling sensor data and sending it to the gateway
+/// Our permanently running task of waiting, polling sensor data(conditional depending on which features it was compiled with) and sending it to the gateway
 #[embassy_executor::task]
 async fn main_loop(
     mut esp_now: EspNow<'static>,
@@ -177,7 +179,6 @@ async fn main_loop(
         {
             sensor_data.add_data(Data::new("light".to_string(), {
                 // I really don't know why the library doesn't abstract this away. Maybe we should make a PR?
-                // TODO: Think about normalizing the lux values, though it's probably not needed
                 let (ch_0, ch_1) = tsl.get_channel_data(&mut delay).unwrap();
                 tsl.calculate_lux(ch_0, ch_1).unwrap()
             }));
@@ -218,21 +219,22 @@ async fn main_loop(
 fn main() -> ! {
     init_logger(log::LevelFilter::Info);
     init_heap();
-    println!("Hello from Rust");
+    println!("Hello from the aggregator! Now set up the esp-gateway and you should be able to receive data!");
 
     let peripherals = Peripherals::take();
 
     let system = peripherals.SYSTEM.split();
     let clocks = ClockControl::configure(system.clock_control, CpuClock::Clock160MHz).freeze();
     #[allow(unused_variables, unused_mut)]
+    // We disable the watchdog because it doesn't work properly with embassy and esp-wifi currently
     let mut rtc = {
         let mut rtc = Rtc::new(peripherals.RTC_CNTL);
         rtc.swd.disable();
-
         rtc.rwdt.disable();
         rtc
     };
     let io = IO::new(peripherals.GPIO, peripherals.IO_MUX);
+
     // Generate our random UUID if not yet generated. We have to do this before intializing wifi because we
     // pass ownership of our RNG to the wifi driver
     let mut rng = Rng::new(peripherals.RNG);
@@ -256,18 +258,20 @@ fn main() -> ! {
         flash.write(flash_addr, &uuid_slice).unwrap();
         uuid
     });
+
+    // Initialize the ESP-NOW driver
     let timer = SystemTimer::new(peripherals.SYSTIMER).alarm0;
     initialize(timer, rng, system.radio_clock_control, &clocks).unwrap();
-
     let (wifi, _) = peripherals.RADIO.split();
-
     let esp_now = EspNow::new(wifi).unwrap();
     unsafe {
+        // We can use this to extend the possible range of data transfer between the aggregator and receiver
         esp_wifi_set_protocol(
             wifi_interface_t_WIFI_IF_STA,
             WIFI_PROTOCOL_LR.try_into().unwrap(),
         );
     }
+
     let mut peripheral_cc = system.peripheral_clock_control;
     let timer_group0 = TimerGroup::new(peripherals.TIMG0, &clocks, &mut peripheral_cc);
     embassy::init(&clocks, timer_group0.timer0);
@@ -276,6 +280,7 @@ fn main() -> ! {
     let adc_config = AdcConfig::new();
     let i2c0 = peripherals.I2C0;
     let delay = Delay::new(&clocks);
+    // And after splitting off the peripherals we can spawn our main loop, passing ownership of the peripherals to it
     executor.run(|spawner| {
         spawner
             .spawn(main_loop(
